@@ -39,7 +39,7 @@ body {
 }
 
 .hero-description {
-  max-width: 620px;
+  max-width: 700px;
   margin: 0 auto;
   font-size: 18px;
   line-height: 1.6;
@@ -130,6 +130,26 @@ input[type="number"] {
   background: #fffdf8;
   font-size: 15px;
   color: #2f261f;
+}
+
+.info-box {
+  margin-top: 22px;
+  padding: 18px;
+  background: #f3eadc;
+  border-radius: 14px;
+}
+
+.info-box h3 {
+  margin: 0 0 10px;
+  font-size: 17px;
+  color: #3f2b20;
+}
+
+.info-box ul {
+  margin: 0;
+  padding-left: 20px;
+  color: #5f4c3f;
+  line-height: 1.7;
 }
 
 .type-box {
