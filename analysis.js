@@ -140,12 +140,51 @@ function escapeBadNewlinesInsideStrings(jsonText) {
   return result;
 }
 
+function repairMissingCommaAndQuoteBeforeKnownKeys(text) {
+  const knownKeys = [
+    "userAnswer",
+    "correctAnswer",
+    "isCorrect",
+    "weakConcept",
+    "explanation",
+    "questionNumber",
+    "difficulty",
+    "type",
+    "question",
+  ];
+
+  let repaired = text;
+
+  knownKeys.forEach((key) => {
+    const keyPattern = new RegExp(`([^",\\{\\[])[\\n\\r\\s]*("${key}"\\s*:)`, "g");
+    repaired = repaired.replace(keyPattern, `$1",\n$2`);
+  });
+
+  return repaired;
+}
+
+function repairExtraClosingBraces(text) {
+  let repaired = text;
+
+  repaired = repaired.replace(/}\s*}\s*]/g, "}\n]");
+  repaired = repaired.replace(/}\s*}\s*,\s*{/g, "},\n{");
+
+  return repaired;
+}
+
 function cleanCommonJsonProblems(jsonText) {
-  return jsonText
+  let repaired = jsonText;
+
+  repaired = repaired
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'")
     .replace(/,\s*}/g, "}")
     .replace(/,\s*]/g, "]");
+
+  repaired = repairMissingCommaAndQuoteBeforeKnownKeys(repaired);
+  repaired = repairExtraClosingBraces(repaired);
+
+  return repaired;
 }
 
 function parseJsonFlexibly(text) {
@@ -161,11 +200,22 @@ function parseJsonFlexibly(text) {
     try {
       return JSON.parse(repairedText);
     } catch (secondError) {
-      console.error("첫 번째 JSON 파싱 오류:", firstError);
-      console.error("수정 후 JSON 파싱 오류:", secondError);
-      console.error("수정 시도한 JSON:", repairedText);
+      const secondRepair = cleanCommonJsonProblems(
+        repairExtraClosingBraces(
+          repairMissingCommaAndQuoteBeforeKnownKeys(jsonObjectText)
+        )
+      );
 
-      throw new Error("분석용 데이터 형식이 올바르지 않습니다.");
+      try {
+        return JSON.parse(secondRepair);
+      } catch (thirdError) {
+        console.error("첫 번째 JSON 파싱 오류:", firstError);
+        console.error("수정 후 JSON 파싱 오류:", secondError);
+        console.error("두 번째 수정 후 JSON 파싱 오류:", thirdError);
+        console.error("수정 시도한 JSON:", secondRepair);
+
+        throw new Error("분석용 데이터 형식이 올바르지 않습니다.");
+      }
     }
   }
 }
