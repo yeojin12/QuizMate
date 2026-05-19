@@ -76,7 +76,12 @@ function parseCsvData(text) {
     throw new Error("CSV 데이터가 부족합니다.");
   }
 
-  const dataLines = lines[0].includes("번호") ? lines.slice(1) : lines;
+  const hasHeader =
+    lines[0].includes("번호") &&
+    lines[0].includes("난이도") &&
+    lines[0].includes("유형");
+
+  const dataLines = hasHeader ? lines.slice(1) : lines;
 
   const records = dataLines.map((line, index) => {
     const parts = line.split(",").map((part) => part.trim());
@@ -85,31 +90,134 @@ function parseCsvData(text) {
       throw new Error(`${index + 1}번째 줄의 CSV 형식이 올바르지 않습니다.`);
     }
 
-    const [questionNumber, difficulty, type, result, ...conceptParts] = parts;
-    const weakConcept = conceptParts.join(" ").trim();
+    let session = "미지정";
+    let questionNumber;
+    let difficulty;
+    let type;
+    let result;
+    let weakConcept;
+
+    if (parts.length >= 6) {
+      const [sessionValue, questionNumberValue, difficultyValue, typeValue, resultValue, ...conceptParts] = parts;
+
+      session = sessionValue || "미지정";
+      questionNumber = questionNumberValue;
+      difficulty = difficultyValue;
+      type = typeValue;
+      result = resultValue;
+      weakConcept = conceptParts.join(" ").trim();
+    } else {
+      const [questionNumberValue, difficultyValue, typeValue, resultValue, ...conceptParts] = parts;
+
+      questionNumber = questionNumberValue;
+      difficulty = difficultyValue;
+      type = typeValue;
+      result = resultValue;
+      weakConcept = conceptParts.join(" ").trim();
+    }
 
     return {
+      id: createRecordId(session, questionNumber, difficulty, type, result, weakConcept),
+      session,
       questionNumber: Number(questionNumber) || index + 1,
       difficulty: difficulty || "미분류",
       type: type || "미분류",
       result: result || "미기록",
       isCorrect: result === "정답" || result.toLowerCase() === "correct",
       weakConcept: weakConcept || "미기록",
+      addedAt: new Date().toISOString(),
     };
   });
 
   return records;
 }
 
-function analyzeRecords(records) {
-  currentRecords = records;
+function createRecordId(session, questionNumber, difficulty, type, result, weakConcept) {
+  return [
+    session || "미지정",
+    questionNumber || "",
+    difficulty || "",
+    type || "",
+    result || "",
+    weakConcept || "",
+  ].join("|");
+}
 
-  localStorage.setItem("quizMateAnalysisRecords", JSON.stringify(currentRecords));
+function mergeRecords(existingRecords, newRecords) {
+  const recordMap = new Map();
+
+  existingRecords.forEach((record) => {
+    const id =
+      record.id ||
+      createRecordId(
+        record.session,
+        record.questionNumber,
+        record.difficulty,
+        record.type,
+        record.result,
+        record.weakConcept
+      );
+
+    recordMap.set(id, {
+      ...record,
+      id,
+    });
+  });
+
+  newRecords.forEach((record) => {
+    const id =
+      record.id ||
+      createRecordId(
+        record.session,
+        record.questionNumber,
+        record.difficulty,
+        record.type,
+        record.result,
+        record.weakConcept
+      );
+
+    if (!recordMap.has(id)) {
+      recordMap.set(id, {
+        ...record,
+        id,
+      });
+    }
+  });
+
+  return Array.from(recordMap.values());
+}
+
+function analyzeRecords(newRecords) {
+  const savedRecords = loadRecordsFromStorage();
+
+  currentRecords = mergeRecords(savedRecords, newRecords);
+
+  saveRecordsToStorage(currentRecords);
 
   updateSummary(currentRecords);
   updateTable(currentRecords);
   updateCharts(currentRecords);
   updateRecommendation(currentRecords);
+}
+
+function saveRecordsToStorage(records) {
+  localStorage.setItem("quizMateAnalysisRecords", JSON.stringify(records));
+}
+
+function loadRecordsFromStorage() {
+  const saved = localStorage.getItem("quizMateAnalysisRecords");
+
+  if (!saved) {
+    return [];
+  }
+
+  try {
+    return JSON.parse(saved);
+  } catch (error) {
+    console.error(error);
+    localStorage.removeItem("quizMateAnalysisRecords");
+    return [];
+  }
 }
 
 function updateSummary(records) {
@@ -283,13 +391,13 @@ function updateRecommendation(records) {
 
   if (overallWrongRate >= 70) {
     recommendation +=
-      "전체 오답률이 매우 높습니다. 지금은 어려운 문제를 늘리기보다 쉬움 난이도의 O/X와 객관식 문제로 기본 개념을 다시 확인하는 것이 우선입니다.<br><br>";
+      "누적 오답률이 매우 높습니다. 지금은 어려운 문제를 늘리기보다 쉬움 난이도의 O/X와 객관식 문제로 기본 개념을 다시 확인하는 것이 우선입니다.<br><br>";
   } else if (overallWrongRate >= 40) {
     recommendation +=
-      "전체 오답률이 중간 이상입니다. 개념을 어느 정도 알고 있지만 헷갈리는 지점이 남아 있습니다. 보통 난이도의 객관식과 O/X 문제를 반복하는 것이 좋습니다.<br><br>";
+      "누적 오답률이 중간 이상입니다. 개념을 어느 정도 알고 있지만 헷갈리는 지점이 남아 있습니다. 보통 난이도의 객관식과 O/X 문제를 반복하는 것이 좋습니다.<br><br>";
   } else {
     recommendation +=
-      "전체 오답률이 낮은 편입니다. 현재 수준에서는 보통 또는 어려움 난이도의 단답형·서술형 문제로 넘어가도 좋습니다.<br><br>";
+      "누적 오답률이 낮은 편입니다. 현재 수준에서는 보통 또는 어려움 난이도의 단답형·서술형 문제로 넘어가도 좋습니다.<br><br>";
   }
 
   if (weakestDifficulty) {
@@ -326,7 +434,7 @@ async function handleResultFileUpload(event) {
   const fileName = file.name.toLowerCase();
 
   try {
-    recommendationBox.textContent = "파일을 읽고 분석하는 중입니다...";
+    recommendationBox.textContent = "파일을 읽고 누적 분석하는 중입니다...";
 
     let extractedText = "";
 
@@ -344,8 +452,8 @@ async function handleResultFileUpload(event) {
       return;
     }
 
-    const records = parseCsvData(extractedText);
-    analyzeRecords(records);
+    const newRecords = parseCsvData(extractedText);
+    analyzeRecords(newRecords);
   } catch (error) {
     console.error(error);
     alert("분석에 실패했습니다. CSV 형식을 확인해주세요.");
@@ -363,8 +471,8 @@ function handleManualAnalyze() {
   }
 
   try {
-    const records = parseCsvData(text);
-    analyzeRecords(records);
+    const newRecords = parseCsvData(text);
+    analyzeRecords(newRecords);
   } catch (error) {
     console.error(error);
     alert("CSV 데이터 형식이 올바르지 않습니다.");
@@ -372,10 +480,11 @@ function handleManualAnalyze() {
 }
 
 function convertRecordsToCsv(records) {
-  const headers = ["번호", "난이도", "유형", "결과", "취약개념"];
+  const headers = ["세션", "번호", "난이도", "유형", "결과", "취약개념"];
 
   const rows = records.map((record) => {
     return [
+      record.session || "미지정",
       record.questionNumber,
       record.difficulty,
       record.type,
@@ -425,26 +534,12 @@ function clearData() {
 }
 
 function loadSavedRecords() {
-  const saved = localStorage.getItem("quizMateAnalysisRecords");
+  currentRecords = loadRecordsFromStorage();
 
-  if (!saved) {
-    updateSummary([]);
-    updateTable([]);
-    updateCharts([]);
-    updateRecommendation([]);
-    return;
-  }
-
-  try {
-    currentRecords = JSON.parse(saved);
-    updateSummary(currentRecords);
-    updateTable(currentRecords);
-    updateCharts(currentRecords);
-    updateRecommendation(currentRecords);
-  } catch (error) {
-    console.error(error);
-    localStorage.removeItem("quizMateAnalysisRecords");
-  }
+  updateSummary(currentRecords);
+  updateTable(currentRecords);
+  updateCharts(currentRecords);
+  updateRecommendation(currentRecords);
 }
 
 resultPdfFile.addEventListener("change", handleResultFileUpload);
