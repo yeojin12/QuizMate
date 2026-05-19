@@ -46,223 +46,63 @@ async function readPdfFile(file) {
   return fullText.trim();
 }
 
-function normalizeExtractedText(text) {
-  return text
-    .replace(/\u00A0/g, " ")
-    .replace(/Q\s*U\s*I\s*Z\s*M\s*A\s*T\s*E\s*_\s*A\s*N\s*A\s*L\s*Y\s*S\s*I\s*S\s*_\s*D\s*A\s*T\s*A\s*_\s*S\s*T\s*A\s*R\s*T/g, "QUIZMATE_ANALYSIS_DATA_START")
-    .replace(/Q\s*U\s*I\s*Z\s*M\s*A\s*T\s*E\s*_\s*A\s*N\s*A\s*L\s*Y\s*S\s*I\s*S\s*_\s*D\s*A\s*T\s*A\s*_\s*E\s*N\s*D/g, "QUIZMATE_ANALYSIS_DATA_END");
-}
+function extractCsvBlock(text) {
+  const startMarker = "QUIZMATE_CSV_START";
+  const endMarker = "QUIZMATE_CSV_END";
 
-function extractAnalysisJson(text) {
-  const normalizedText = normalizeExtractedText(text);
-
-  const startMarker = "QUIZMATE_ANALYSIS_DATA_START";
-  const endMarker = "QUIZMATE_ANALYSIS_DATA_END";
-
-  const startIndex = normalizedText.indexOf(startMarker);
-  const endIndex = normalizedText.indexOf(endMarker);
+  const startIndex = text.indexOf(startMarker);
+  const endIndex = text.indexOf(endMarker);
 
   if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-    const jsonText = normalizedText
+    return text
       .slice(startIndex + startMarker.length, endIndex)
       .trim();
-
-    return parseJsonFlexibly(jsonText);
   }
 
-  return tryExtractJsonWithoutMarkers(normalizedText);
+  return text.trim();
 }
 
-function removeCodeFence(text) {
-  return text
-    .replace(/^```json/i, "")
-    .replace(/^```/i, "")
-    .replace(/```$/i, "")
-    .trim();
-}
+function parseCsvData(text) {
+  const csvBlock = extractCsvBlock(text);
 
-function getJsonObjectText(text) {
-  const cleaned = removeCodeFence(text);
+  const lines = csvBlock
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => !line.includes("QUIZMATE_CSV_START"))
+    .filter((line) => !line.includes("QUIZMATE_CSV_END"));
 
-  const firstBrace = cleaned.indexOf("{");
-  const lastBrace = cleaned.lastIndexOf("}");
-
-  if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
-    throw new Error("JSON 객체를 찾지 못했습니다.");
+  if (lines.length < 2) {
+    throw new Error("CSV 데이터가 부족합니다.");
   }
 
-  return cleaned.slice(firstBrace, lastBrace + 1);
-}
+  const dataLines = lines[0].includes("번호") ? lines.slice(1) : lines;
 
-function escapeBadNewlinesInsideStrings(jsonText) {
-  let result = "";
-  let inString = false;
-  let isEscaped = false;
+  const records = dataLines.map((line, index) => {
+    const parts = line.split(",").map((part) => part.trim());
 
-  for (let i = 0; i < jsonText.length; i++) {
-    const char = jsonText[i];
-
-    if (isEscaped) {
-      result += char;
-      isEscaped = false;
-      continue;
+    if (parts.length < 5) {
+      throw new Error(`${index + 1}번째 줄의 CSV 형식이 올바르지 않습니다.`);
     }
 
-    if (char === "\\") {
-      result += char;
-      isEscaped = true;
-      continue;
-    }
+    const [questionNumber, difficulty, type, result, ...conceptParts] = parts;
+    const weakConcept = conceptParts.join(" ").trim();
 
-    if (char === '"') {
-      result += char;
-      inString = !inString;
-      continue;
-    }
-
-    if (inString && char === "\n") {
-      result += "\\n";
-      continue;
-    }
-
-    if (inString && char === "\r") {
-      continue;
-    }
-
-    if (inString && char === "\t") {
-      result += "\\t";
-      continue;
-    }
-
-    result += char;
-  }
-
-  return result;
-}
-
-function repairMissingCommaAndQuoteBeforeKnownKeys(text) {
-  const knownKeys = [
-    "userAnswer",
-    "correctAnswer",
-    "isCorrect",
-    "weakConcept",
-    "explanation",
-    "questionNumber",
-    "difficulty",
-    "type",
-    "question",
-  ];
-
-  let repaired = text;
-
-  knownKeys.forEach((key) => {
-    const keyPattern = new RegExp(`([^",\\{\\[])[\\n\\r\\s]*("${key}"\\s*:)`, "g");
-    repaired = repaired.replace(keyPattern, `$1",\n$2`);
+    return {
+      questionNumber: Number(questionNumber) || index + 1,
+      difficulty: difficulty || "미분류",
+      type: type || "미분류",
+      result: result || "미기록",
+      isCorrect: result === "정답" || result.toLowerCase() === "correct",
+      weakConcept: weakConcept || "미기록",
+    };
   });
 
-  return repaired;
+  return records;
 }
 
-function repairExtraClosingBraces(text) {
-  let repaired = text;
-
-  repaired = repaired.replace(/}\s*}\s*]/g, "}\n]");
-  repaired = repaired.replace(/}\s*}\s*,\s*{/g, "},\n{");
-
-  return repaired;
-}
-
-function cleanCommonJsonProblems(jsonText) {
-  let repaired = jsonText;
-
-  repaired = repaired
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/,\s*}/g, "}")
-    .replace(/,\s*]/g, "]");
-
-  repaired = repairMissingCommaAndQuoteBeforeKnownKeys(repaired);
-  repaired = repairExtraClosingBraces(repaired);
-
-  return repaired;
-}
-
-function parseJsonFlexibly(text) {
-  const jsonObjectText = getJsonObjectText(text);
-
-  try {
-    return JSON.parse(jsonObjectText);
-  } catch (firstError) {
-    const repairedText = cleanCommonJsonProblems(
-      escapeBadNewlinesInsideStrings(jsonObjectText)
-    );
-
-    try {
-      return JSON.parse(repairedText);
-    } catch (secondError) {
-      const secondRepair = cleanCommonJsonProblems(
-        repairExtraClosingBraces(
-          repairMissingCommaAndQuoteBeforeKnownKeys(jsonObjectText)
-        )
-      );
-
-      try {
-        return JSON.parse(secondRepair);
-      } catch (thirdError) {
-        console.error("첫 번째 JSON 파싱 오류:", firstError);
-        console.error("수정 후 JSON 파싱 오류:", secondError);
-        console.error("두 번째 수정 후 JSON 파싱 오류:", thirdError);
-        console.error("수정 시도한 JSON:", secondRepair);
-
-        throw new Error("분석용 데이터 형식이 올바르지 않습니다.");
-      }
-    }
-  }
-}
-
-function tryExtractJsonWithoutMarkers(text) {
-  const recordsIndex = text.indexOf('"records"');
-
-  if (recordsIndex === -1) {
-    throw new Error("분석용 데이터 구간을 찾지 못했습니다.");
-  }
-
-  const beforeRecords = text.lastIndexOf("{", recordsIndex);
-  const afterRecords = text.lastIndexOf("}");
-
-  if (beforeRecords === -1 || afterRecords === -1 || afterRecords <= beforeRecords) {
-    throw new Error("JSON 객체를 찾지 못했습니다.");
-  }
-
-  const jsonText = text.slice(beforeRecords, afterRecords + 1);
-
-  return parseJsonFlexibly(jsonText);
-}
-
-function normalizeRecord(record, index) {
-  return {
-    questionNumber: Number(record.questionNumber || index + 1),
-    difficulty: record.difficulty || "미분류",
-    type: record.type || "미분류",
-    question: record.question || "",
-    userAnswer: record.userAnswer || "",
-    correctAnswer: record.correctAnswer || "",
-    isCorrect:
-      record.isCorrect === true ||
-      record.isCorrect === "true" ||
-      record.isCorrect === "정답",
-    weakConcept: record.weakConcept || "미기록",
-    explanation: record.explanation || "",
-  };
-}
-
-function analyzeData(data) {
-  if (!data.records || !Array.isArray(data.records)) {
-    alert("records 배열을 찾지 못했습니다.");
-    return;
-  }
-
-  currentRecords = data.records.map(normalizeRecord);
+function analyzeRecords(records) {
+  currentRecords = records;
 
   localStorage.setItem("quizMateAnalysisRecords", JSON.stringify(currentRecords));
 
@@ -376,7 +216,7 @@ function updateTable(records) {
   if (records.length === 0) {
     recordsTable.innerHTML = `
       <tr>
-        <td colspan="7">아직 분석된 데이터가 없습니다.</td>
+        <td colspan="5">아직 분석된 데이터가 없습니다.</td>
       </tr>
     `;
     return;
@@ -389,8 +229,6 @@ function updateTable(records) {
           <td>${record.questionNumber}</td>
           <td>${record.difficulty}</td>
           <td>${record.type}</td>
-          <td>${record.userAnswer}</td>
-          <td>${record.correctAnswer}</td>
           <td>${record.isCorrect ? "정답" : "오답"}</td>
           <td>${record.weakConcept}</td>
         </tr>
@@ -494,23 +332,25 @@ async function handleResultFileUpload(event) {
 
     if (fileName.endsWith(".pdf")) {
       extractedText = await readPdfFile(file);
-    } else if (fileName.endsWith(".txt") || fileName.endsWith(".md")) {
+    } else if (
+      fileName.endsWith(".txt") ||
+      fileName.endsWith(".md") ||
+      fileName.endsWith(".csv")
+    ) {
       extractedText = await readTextFile(file);
     } else {
-      alert("pdf, txt, md 파일만 업로드할 수 있습니다.");
+      alert("pdf, txt, md, csv 파일만 업로드할 수 있습니다.");
       recommendationBox.textContent = "지원하지 않는 파일 형식입니다.";
       return;
     }
 
-    const data = extractAnalysisJson(extractedText);
-    analyzeData(data);
+    const records = parseCsvData(extractedText);
+    analyzeRecords(records);
   } catch (error) {
     console.error(error);
-    alert(
-      "자동 분석에 실패했습니다. PDF 안에 분석용 JSON 데이터가 없거나, PDF 변환 과정에서 데이터가 깨졌을 수 있습니다. 수동 입력 영역을 사용해주세요."
-    );
+    alert("분석에 실패했습니다. CSV 형식을 확인해주세요.");
     recommendationBox.textContent =
-      "자동 분석에 실패했습니다. GPT가 만든 QuizMate_analysis_data.txt 파일이 있다면 그 내용을 수동 입력 영역에 붙여넣어 주세요.";
+      "분석에 실패했습니다. 수동 입력 영역에 CSV 데이터를 붙여넣어 주세요.";
   }
 }
 
@@ -518,46 +358,30 @@ function handleManualAnalyze() {
   const text = manualDataInput.value.trim();
 
   if (!text) {
-    alert("분석용 데이터를 입력해주세요.");
+    alert("분석용 CSV 데이터를 입력해주세요.");
     return;
   }
 
   try {
-    let data;
-
-    if (text.includes("QUIZMATE_ANALYSIS_DATA_START")) {
-      data = extractAnalysisJson(text);
-    } else {
-      data = parseJsonFlexibly(text);
-    }
-
-    analyzeData(data);
+    const records = parseCsvData(text);
+    analyzeRecords(records);
   } catch (error) {
     console.error(error);
-    alert("분석용 데이터 형식이 올바르지 않습니다.");
+    alert("CSV 데이터 형식이 올바르지 않습니다.");
   }
 }
 
 function convertRecordsToCsv(records) {
-  const headers = [
-    "questionNumber",
-    "difficulty",
-    "type",
-    "question",
-    "userAnswer",
-    "correctAnswer",
-    "isCorrect",
-    "weakConcept",
-    "explanation",
-  ];
+  const headers = ["번호", "난이도", "유형", "결과", "취약개념"];
 
   const rows = records.map((record) => {
-    return headers
-      .map((header) => {
-        const value = record[header] ?? "";
-        return `"${String(value).replaceAll('"', '""')}"`;
-      })
-      .join(",");
+    return [
+      record.questionNumber,
+      record.difficulty,
+      record.type,
+      record.isCorrect ? "정답" : "오답",
+      record.weakConcept,
+    ].join(",");
   });
 
   return [headers.join(","), ...rows].join("\n");

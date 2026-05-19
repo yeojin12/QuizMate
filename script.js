@@ -88,45 +88,38 @@ async function handleFileUpload(event) {
   }
 }
 
-function getAnalysisDataInstruction(selectedDifficulty, selectedTypes) {
+function getCsvDataInstruction(selectedDifficulty, selectedTypes) {
   return `
 
-중요: QuizMate 결과 분석을 위한 데이터 생성 규칙:
-- 내가 "정리"라고 입력하면, 복습용 PDF를 생성할 때 반드시 PDF 본문 맨 마지막에 아래 형식의 분석용 JSON 데이터를 포함해줘.
-- 이 데이터는 QuizMate 분석 페이지에서 PDF를 업로드했을 때 자동으로 읽기 위한 것이야.
-- JSON 형식이 깨지면 분석이 불가능하므로, 큰따옴표를 사용하는 올바른 JSON으로 작성해줘.
-- 문제를 푸는 동안 각 문제의 난이도, 유형, 내 답, 정답, 정오답 여부, 취약 개념을 계속 기록해줘.
-- difficulty 값은 가능하면 "${selectedDifficulty}"로 기록하되, 문제별로 난이도가 다르면 쉬움/보통/어려움 중 하나로 기록해줘.
-- type 값은 ${selectedTypes.join(", ")} 중 실제 문제 유형으로 기록해줘.
-- isCorrect는 정답이면 true, 오답이면 false로 기록해줘.
+중요: QuizMate 결과 분석용 CSV 데이터 생성 규칙
 
-PDF 마지막에 반드시 아래 구간을 포함해줘.
+내가 "정리"라고 입력하면, 복습용 PDF를 만들 때 PDF 마지막에 반드시 아래 형식의 CSV 데이터를 넣어줘.
+가능하다면 같은 내용을 별도의 txt 파일로도 만들어줘. 파일 이름은 QuizMate_analysis_data.txt 로 해줘.
 
-QUIZMATE_ANALYSIS_DATA_START
-{
-  "sessionTitle": "QuizMate 학습 결과",
-  "createdAt": "YYYY-MM-DD",
-  "records": [
-    {
-      "questionNumber": 1,
-      "difficulty": "쉬움",
-      "type": "객관식",
-      "question": "문제 내용을 여기에 작성",
-      "userAnswer": "내가 입력한 답",
-      "correctAnswer": "정답",
-      "isCorrect": true,
-      "weakConcept": "관련 개념",
-      "explanation": "핵심 해설"
-    }
-  ]
-}
-QUIZMATE_ANALYSIS_DATA_END
+반드시 아래 형식을 그대로 사용해줘.
 
-주의:
-- 분석용 JSON에는 실제로 푼 모든 문제를 records 배열에 넣어줘.
-- 내가 틀린 문제만 넣지 말고, 맞힌 문제와 틀린 문제 모두 넣어줘.
-- PDF 파일 생성이 가능한 환경이면 다운로드 가능한 PDF 파일로 만들어줘.
-- PDF 생성이 불가능한 환경이면 PDF로 변환하기 좋은 문서 형식으로 정리하되, 분석용 JSON 구간은 반드시 포함해줘.
+QUIZMATE_CSV_START
+번호,난이도,유형,결과,취약개념
+1,쉬움,O/X,오답,인공지능 정의
+2,쉬움,객관식,정답,기계학습 분류
+3,쉬움,단답형,오답,규칙기반과 데이터기반
+QUIZMATE_CSV_END
+
+CSV 작성 규칙:
+- JSON을 만들지 마. 중괄호 { } 를 사용하지 마.
+- 따옴표를 사용하지 마.
+- 문제 전문을 넣지 마.
+- 해설 전문을 넣지 마.
+- 각 줄은 반드시 번호,난이도,유형,결과,취약개념 순서로 작성해줘.
+- 쉼표는 각 줄에 정확히 4개만 사용해줘.
+- 취약개념 안에는 쉼표를 넣지 마.
+- 난이도는 쉬움, 보통, 어려움 중 하나로 써줘.
+- 기본 난이도는 "${selectedDifficulty}"이야.
+- 유형은 ${selectedTypes.join(", ")} 중 실제 유형으로 써줘.
+- 결과는 정답 또는 오답 중 하나로 써줘.
+- 맞힌 문제와 틀린 문제를 모두 기록해줘.
+- PDF 안에서 CSV 구간은 이미지가 아니라 선택 가능한 텍스트로 넣어줘.
+- QUIZMATE_CSV_START와 QUIZMATE_CSV_END 마커를 번역하거나 바꾸지 마.
 `;
 }
 
@@ -145,7 +138,7 @@ function createSummaryFirstPrompt(
 - 그다음 내가 "시작"이라고 입력하면 퀴즈를 시작해줘.
 - 퀴즈에서는 정답을 바로 보여주지 말고, 내가 직접 답을 말하면 그때 채점과 해설을 제공해줘.
 - 퀴즈 도중 또는 끝나기 전에 내가 "정리"라고 말하면, 지금까지 푼 문제와 오답을 반영한 복습용 PDF 정리본을 다시 만들어줘.
-- 최종 결과 PDF에는 QuizMate에서 분석할 수 있는 JSON 데이터를 반드시 포함해줘.
+- 최종 결과 PDF에는 QuizMate에서 분석할 수 있는 CSV 데이터를 반드시 포함해줘.
 
 1단계. 강의자료 기반 PDF 학습 정리본 생성:
 먼저 아래 강의 내용을 바탕으로 PDF 파일을 생성해줘.
@@ -155,31 +148,19 @@ QuizMate_강의자료_학습정리본
 
 PDF 정리본 구성:
 1. 표지
-   - 제목: QuizMate 강의자료 학습 정리본
-   - 정리 수준: ${selectedSummaryLevel}
-   - 목적: 퀴즈 전 1차 개념 학습
-
 2. 전체 주제 한 줄 요약
-
 3. 핵심 개념 정리
-   - 개념명, 의미, 예시를 포함
-
 4. 헷갈리기 쉬운 개념 비교표
-
 5. 시험에 나올 만한 포인트
-
 6. 꼭 기억해야 할 키워드
-
 7. 학습자가 오해하기 쉬운 부분
-
 8. 퀴즈 전 체크리스트
 
 PDF 생성 조건:
 - 가능하다면 다운로드 가능한 PDF 파일로 직접 생성해줘.
-- PDF 파일은 제목과 소제목이 잘 구분되도록 구성해줘.
+- 제목과 소제목이 잘 구분되도록 구성해줘.
 - 표와 목록을 활용해서 공부하기 쉽게 만들어줘.
 - 너무 긴 문단보다 짧은 문장과 항목 중심으로 정리해줘.
-- 만약 현재 환경에서 PDF 파일 생성이 불가능하다면, PDF로 변환하기 좋은 문서 형식으로 정리해줘. 단, 이 경우에도 실제 정리본 본문을 완성된 형태로 제공해줘.
 
 PDF 정리본을 만든 뒤에는 바로 문제를 내지 말고, 다음 문장을 출력하고 기다려줘.
 "PDF 정리본을 확인했다면 '시작'이라고 입력하세요. 그러면 퀴즈를 시작하겠습니다."
@@ -219,21 +200,20 @@ PDF 구성:
 5. 중요한 개념 정리
 6. 헷갈리기 쉬운 개념 비교표
 7. 다음 복습 추천
-8. QuizMate 분석용 데이터
+8. QuizMate 분석용 CSV 데이터
 
 PDF 생성 조건:
 - 가능하다면 다운로드 가능한 PDF 파일로 직접 생성해줘.
 - 내가 틀린 문제는 반드시 따로 분리해서 오답노트처럼 정리해줘.
-- PDF 마지막에는 QuizMate 분석용 JSON 데이터를 반드시 포함해줘.
+- PDF 마지막에는 QuizMate 분석용 CSV 데이터를 반드시 포함해줘.
 
-${getAnalysisDataInstruction(selectedDifficulty, selectedTypes)}
+${getCsvDataInstruction(selectedDifficulty, selectedTypes)}
 
 주의 사항:
 - 문제를 출제할 때 정답을 미리 보여주지 마.
 - 내가 답을 말하기 전까지 해설도 보여주지 마.
 - 퀴즈 중에는 지금까지의 정답/오답 기록을 누적해서 기억해줘.
 - "정리" 명령이 나오면 누적된 기록을 기준으로 복습용 PDF를 만들어줘.
-- 처음 PDF 정리본은 퀴즈 전 학습용이고, "정리" 명령 후 PDF는 퀴즈 결과 기반 복습용이야. 두 PDF의 목적을 구분해줘.
 
 강의 내용:
 ${content}`;
@@ -246,7 +226,7 @@ function createQuizOnlyPrompt(content, selectedDifficulty, count, selectedTypes)
 - 나는 강의 내용을 바탕으로 퀴즈를 풀면서 이해도를 점검하고 싶어.
 - 정답과 해설을 먼저 보여주지 말고, 내가 답을 입력한 뒤 채점과 해설을 제공해줘.
 - 내가 "정리"라고 말하면 지금까지 푼 문제, 오답, 중요한 개념을 복습용 PDF 파일로 생성해줘.
-- 최종 결과 PDF에는 QuizMate에서 분석할 수 있는 JSON 데이터를 반드시 포함해줘.
+- 최종 결과 PDF에는 QuizMate에서 분석할 수 있는 CSV 데이터를 반드시 포함해줘.
 
 퀴즈 조건:
 1. 대상은 대학 교양 과목 수강생 수준으로 설정해줘.
@@ -283,14 +263,14 @@ PDF 구성:
 5. 중요한 개념 정리
 6. 헷갈리기 쉬운 개념 비교표
 7. 다음 복습 추천
-8. QuizMate 분석용 데이터
+8. QuizMate 분석용 CSV 데이터
 
 PDF 생성 조건:
 - 가능하다면 다운로드 가능한 PDF 파일로 직접 생성해줘.
 - 내가 틀린 문제는 반드시 따로 분리해서 오답노트처럼 정리해줘.
-- PDF 마지막에는 QuizMate 분석용 JSON 데이터를 반드시 포함해줘.
+- PDF 마지막에는 QuizMate 분석용 CSV 데이터를 반드시 포함해줘.
 
-${getAnalysisDataInstruction(selectedDifficulty, selectedTypes)}
+${getCsvDataInstruction(selectedDifficulty, selectedTypes)}
 
 주의 사항:
 - 문제를 출제할 때 정답을 미리 보여주지 마.
