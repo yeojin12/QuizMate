@@ -280,9 +280,9 @@ QuizMate/
 `index.html`을 브라우저에서 실행합니다.
 
 또는 아래 GitHub Pages 배포 링크로 접속합니다.
-```
 👉 [QuizMate 바로가기](https://yeojin12.github.io/QuizMate/)
-```
+
+
 
 ### 2. 강의자료 입력
 
