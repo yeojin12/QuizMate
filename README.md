@@ -5,14 +5,18 @@
 QuizMate는 시험 공부 과정에서 학생들이 강의자료를 단순히 읽는 데 그치지 않고,  
 AI가 생성한 문제를 풀며 자신의 이해도를 점검하고, 퀴즈 결과를 분석하여 다음 학습 방향을 찾을 수 있도록 돕는 학습 보조 도구입니다.
 
+
 ---
+
 
 ## 🔗 Demo / Repository
 
 - **Prototype:** `GitHub Pages 링크를 여기에 입력`
 - **Repository:** `GitHub Repository 링크를 여기에 입력`
 
+
 ---
+
 
 ## ✨ Project Overview
 
