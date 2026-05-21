@@ -11,8 +11,8 @@ AI가 생성한 문제를 풀며 자신의 이해도를 점검하고, 퀴즈 결
 
 ## 🔗 Demo / Repository
 
-- **Prototype:** `https://yeojin12.github.io/QuizMate/`
-- **Repository:** `https://github.com/yeojin12/QuizMate.git`
+- **Prototype:** [QuizMate 바로가기](https://yeojin12.github.io/QuizMate/)
+- **Repository:** [GitHub Repository](https://github.com/yeojin12/QuizMate)
 
 
 ---
